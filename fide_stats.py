@@ -1,101 +1,112 @@
 """
-This script analyzes the FIDE players database (fide.sqlite) to extract
-statistics on active and inactive players per federation and title.
+This script analyzes the FIDE players database to extract statistics on
+active and inactive players per federation and title.
 
-It uses the provided schema for the 'fide' table:
-CREATE TABLE fide(IdNumber INT PRIMARY KEY, Name VARCHAR(60), Fed VARCHAR(3), Sex VARCHAR(1), Tit VARCHAR(3),
-                    WTit VARCHAR(4), OTit VARCHAR(4), FOA VARCHAR(3), SRtng INT, SGm INT, SK INT, RRtng INT, RGm INT, Rk INT,
-                    BRtng INT, BGm INT, BK INT, BDay VARCHAR(4), Flag VARCHAR(4), Birthday DATE)
+It supports both SQLite databases and fixed-width text files.
 
 Assumptions for analysis:
-- Player data is in the table named 'fide'.
 - 'Fed' column indicates the player's federation.
 - 'Tit', 'WTit', 'OTit' columns indicate titles; 'Tit' is prioritized, then 'WTit', then 'OTit'.
-- 'Flag' column indicates player status; non-empty 'Flag' means inactive, empty or NULL means active.
+- 'Flag' column indicates player status; 'i' or 'wi' means inactive, empty means active.
 
-The script uses pandas for data manipulation and assumes it is installed.
+The script uses pandas for data manipulation.
 """
 
+import argparse
 import pathlib
-import sqlite3
 import sys
 
 import pandas as pd
 
-# --- Configuration ---
-DB_FILE = pathlib.Path("data/fide.sqlite")
-PLAYER_TABLE = "fide"
+from readers import get_reader
+
+# --- Default configuration ---
+DEFAULT_INPUT = pathlib.Path("data/fide.sqlite")
 FEDERATION_COL = "Fed"
-TITLE_COLS_PRIORITY = ["Tit", "WTit", "OTit"]  # Ordered by priority
+TITLE_COLS_PRIORITY = ["Tit", "WTit", "OTit"]
 INACTIVE_FLAG_COL = "Flag"
+REQUIRED_COLUMNS = [FEDERATION_COL, INACTIVE_FLAG_COL] + TITLE_COLS_PRIORITY
 
 
-def run_analysis():
+class StatsError(Exception):
+    """Exception raised for errors during statistics processing."""
+    pass
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Analyze FIDE players database for statistics by federation and title."
+    )
+    parser.add_argument(
+        "-i", "--input",
+        type=pathlib.Path,
+        default=DEFAULT_INPUT,
+        help=f"Input FIDE file (.sqlite or .txt). Default: {DEFAULT_INPUT}"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose logging"
+    )
+    return parser.parse_args()
+
+
+def run_analysis(args: argparse.Namespace) -> None:
     """
-    Connects to the SQLite database, extracts player data based on the provided schema,
-    and prints statistics about active/inactive players by federation and title.
+    Load player data and print statistics about active/inactive players
+    by federation and title.
+
+    Raises:
+        StatsError: If analysis fails
     """
-    if not DB_FILE.exists():
-        print(f"Error: Database file not found at '{DB_FILE}'", file=sys.stderr)
-        sys.exit(1)
+    input_path = args.input
+    verbose = args.verbose
+
+    def log(msg: str) -> None:
+        if verbose:
+            print(msg)
+
+    # --- Verify source file exists ---
+    if not input_path.exists():
+        raise StatsError(f"Input file not found at '{input_path}'")
+
+    reader = None
 
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            print(f"Successfully connected to {DB_FILE}")
+        # --- Create reader ---
+        reader = get_reader(input_path, verbose=verbose)
+        print(f"Reading data from '{input_path}'...")
 
-            # Check if the table exists
-            query_table_exists = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{PLAYER_TABLE}';"
-            if pd.read_sql_query(query_table_exists, conn).empty:
-                print(
-                    f"Error: Table '{PLAYER_TABLE}' not found in the database.",
-                    file=sys.stderr,
-                )
-                all_tables = pd.read_sql_query(
-                    "SELECT name FROM sqlite_master WHERE type='table';", conn
-                )
-                print("Available tables are:", file=sys.stderr)
-                print(all_tables.to_string(index=False), file=sys.stderr)
-                sys.exit(1)
+        # Read only required columns for efficiency
+        df = reader.read_columns(REQUIRED_COLUMNS)
+        log(f"Loaded {len(df)} rows.")
 
-            # Construct the SELECT query with all necessary columns
-            columns_to_select = [
-                FEDERATION_COL,
-                INACTIVE_FLAG_COL,
-            ] + TITLE_COLS_PRIORITY
-            columns_str = ", ".join([f'"{col}"' for col in columns_to_select])
-
-            print(
-                f"Reading data from table '{PLAYER_TABLE}' with columns: {columns_str}..."
-            )
-            df = pd.read_sql_query(f'SELECT {columns_str} FROM "{PLAYER_TABLE}"', conn)
-
-    except sqlite3.Error as e:
-        print(f"Database error: {e}", file=sys.stderr)
-        sys.exit(1)
+    except ValueError as e:
+        raise StatsError(f"Configuration error: {e}")
     except Exception as e:
-        # Catch pandas errors if columns are missing
-        print(f"An unexpected error occurred: {e}", file=sys.stderr)
-        print(
-            f"Please ensure table '{PLAYER_TABLE}' has '{FEDERATION_COL}', '{INACTIVE_FLAG_COL}', "
-            f"and {'/'.join(TITLE_COLS_PRIORITY)} columns as specified in the schema.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise StatsError(f"Failed to read data: {e}")
+    finally:
+        if reader:
+            reader.close()
 
     # --- Data Processing ---
     print("Processing player data...")
 
-    # Consolidate Title: Pick the highest priority title available
-    df["main_title"] = (
-        df[TITLE_COLS_PRIORITY[0]]
-        .fillna(df[TITLE_COLS_PRIORITY[1]])
-        .fillna(df[TITLE_COLS_PRIORITY[2]])
-    )
-    df["main_title"] = df["main_title"].fillna("No Title").replace("", "No Title")
+    # Normalize title columns - ensure empty strings instead of NaN
+    for col in TITLE_COLS_PRIORITY:
+        df[col] = df[col].fillna("")
+
+    # Consolidate Title: Pick the highest priority non-empty title
+    # Use explicit iteration to handle empty strings (fillna only handles NaN)
+    df["main_title"] = "No Title"
+    for col in reversed(TITLE_COLS_PRIORITY):  # Process in reverse priority order
+        mask = df[col] != ""
+        df.loc[mask, "main_title"] = df.loc[mask, col]
 
     # Determine Active/Inactive status from 'Flag' column
-    # As clarified by the user, 'i' or 'wi' in the Flag column means inactive.
-    df['is_inactive'] = df[INACTIVE_FLAG_COL].isin(['i', 'wi'])
+    # 'i' or 'wi' in the Flag column means inactive.
+    df["is_inactive"] = df[INACTIVE_FLAG_COL].isin(["i", "wi"])
 
     # --- Federation Statistics ---
     print("\n--- Player Status by Federation ---")
@@ -128,7 +139,18 @@ def run_analysis():
     print("\n\nAnalysis complete.")
 
 
+def main() -> None:
+    """Main entry point with error handling."""
+    args = parse_args()
+    try:
+        run_analysis(args)
+    except StatsError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    run_analysis()
-    run_analysis()
-    run_analysis()
+    main()
