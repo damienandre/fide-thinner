@@ -123,15 +123,12 @@ class TxtWriter:
 
         self._log(f"Writing {len(df)} rows to text file...")
 
-        # Build column index mapping for itertuples
-        # itertuples returns (Index, col1, col2, ...) so offset by 1
-        column_indices = {col: i + 1 for i, col in enumerate(df.columns)}
+        # Pre-compute column index mapping once (itertuples with index=False)
+        column_indices = {col: i for i, col in enumerate(df.columns)}
 
         # Use itertuples for better performance (3-10x faster than iterrows)
         for row_tuple in df.itertuples(index=False, name=None):
-            # Adjust indices since we're using index=False
-            adjusted_indices = {col: i for i, col in enumerate(df.columns)}
-            line = self._format_row_tuple(row_tuple, adjusted_indices)
+            line = self._format_row_tuple(row_tuple, column_indices)
             f.write(line + "\n")
             self._rows_written += 1
 
