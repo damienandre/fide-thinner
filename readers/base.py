@@ -2,7 +2,7 @@
 Base protocol for FIDE database readers.
 """
 
-from typing import Iterator, Protocol
+from typing import Iterator, List, Optional, Protocol
 
 import pandas as pd
 
@@ -10,12 +10,15 @@ import pandas as pd
 class FideReader(Protocol):
     """Protocol for reading FIDE player data from various formats."""
 
-    def read_titles_data(self) -> pd.DataFrame:
+    def read_columns(self, columns: List[str]) -> pd.DataFrame:
         """
-        Read only the title-related columns for filtering.
+        Read only specified columns from the data source.
+
+        Args:
+            columns: List of column names to read
 
         Returns:
-            DataFrame with columns: IdNumber, Tit, WTit, OTit
+            DataFrame with only the specified columns
         """
         ...
 

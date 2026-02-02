@@ -1,9 +1,6 @@
 """Integration tests for fide_thinner and fide_stats."""
 
 import sqlite3
-import subprocess
-import sys
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -117,34 +114,8 @@ def test_txt_file(tmp_path):
 class TestFideThinner:
     """Integration tests for fide_thinner.py."""
 
-    def test_default_sqlite_to_sqlite(self, test_data_dir, monkeypatch):
+    def test_default_sqlite_to_sqlite(self, test_data_dir):
         """Test default behavior: SQLite input to SQLite output."""
-        monkeypatch.chdir(test_data_dir.parent)
-
-        result = subprocess.run(
-            [sys.executable, "-c", """
-import sys
-sys.path.insert(0, '.')
-from fide_thinner import thin_fide_database, parse_args
-import argparse
-
-args = argparse.Namespace(
-    input=__import__('pathlib').Path('data/fide.sqlite'),
-    players=__import__('pathlib').Path('data/players.sqlite'),
-    output=__import__('pathlib').Path('data/fide_thin.sqlite'),
-    chunk_size=100000,
-    verbose=False
-)
-thin_fide_database(args)
-"""],
-            cwd=str(test_data_dir.parent),
-            env={"PYTHONPATH": str(Path(__file__).parent.parent)},
-            capture_output=True,
-            text=True
-        )
-
-        # Allow the script to run from the test directory
-        # We'll directly test the functionality instead
         from fide_thinner import thin_fide_database
         import argparse
 

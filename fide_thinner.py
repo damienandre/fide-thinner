@@ -20,6 +20,7 @@ import sys
 
 import pandas as pd
 
+from fide_format import generate_sqlite_schema
 from readers import get_reader
 from writers import get_writer
 
@@ -27,6 +28,11 @@ from writers import get_writer
 DEFAULT_FIDE_INPUT = pathlib.Path("data/fide.sqlite")
 DEFAULT_PLAYERS_DB = pathlib.Path("data/players.sqlite")
 DEFAULT_OUTPUT = pathlib.Path("data/fide_thin.sqlite")
+
+
+class FideProcessingError(Exception):
+    """Exception raised for errors during FIDE database processing."""
+    pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,7 +69,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable verbose logging"
     )
-    return parser.parse_args()
+
+    args = parser.parse_args()
+
+    # Validate chunk-size
+    if args.chunk_size <= 0:
+        parser.error("--chunk-size must be a positive integer")
+
+    return args
 
 
 def get_default_output(input_path: pathlib.Path) -> pathlib.Path:
@@ -82,13 +95,19 @@ def get_referenced_ids(players_db_path: pathlib.Path, verbose: bool = False) -> 
 
     Returns:
         Set of referenced FIDE IDs
+
+    Raises:
+        FideProcessingError: If database access fails
     """
     if verbose:
         print(f"Reading referenced player IDs from '{players_db_path}'...")
 
-    with sqlite3.connect(players_db_path) as conn:
-        df = pd.read_sql_query("SELECT FideId FROM players", conn)
-        referenced_ids = set(df["FideId"].dropna().astype(int))
+    try:
+        with sqlite3.connect(players_db_path) as conn:
+            df = pd.read_sql_query("SELECT FideId FROM players", conn)
+            referenced_ids = set(df["FideId"].dropna().astype(int))
+    except sqlite3.Error as e:
+        raise FideProcessingError(f"Failed to read players database: {e}")
 
     if verbose:
         print(f"Found {len(referenced_ids)} referenced players.")
@@ -99,6 +118,12 @@ def get_referenced_ids(players_db_path: pathlib.Path, verbose: bool = False) -> 
 def thin_fide_database(args: argparse.Namespace) -> None:
     """
     Reads, filters, and creates the thinned FIDE database.
+
+    Performs single-pass reading: collects titled player IDs during the first
+    chunk pass, then filters all chunks in one read through the file.
+
+    Raises:
+        FideProcessingError: If processing fails
     """
     input_path = args.input
     players_path = args.players
@@ -112,11 +137,9 @@ def thin_fide_database(args: argparse.Namespace) -> None:
 
     # --- Verify source files exist ---
     if not input_path.exists():
-        print(f"Error: Source file '{input_path}' not found.", file=sys.stderr)
-        sys.exit(1)
+        raise FideProcessingError(f"Source file '{input_path}' not found.")
     if not players_path.exists():
-        print(f"Error: Players database '{players_path}' not found.", file=sys.stderr)
-        sys.exit(1)
+        raise FideProcessingError(f"Players database '{players_path}' not found.")
 
     reader = None
     writer = None
@@ -126,41 +149,51 @@ def thin_fide_database(args: argparse.Namespace) -> None:
         reader = get_reader(input_path, verbose=verbose)
         writer = get_writer(output_path, verbose=verbose)
 
-        # --- 1. Get IDs of players with titles ---
-        print("Step 1: Reading players with titles...")
-        df_titles = reader.read_titles_data()
-
-        # Create a boolean mask for players with any title
-        titled_mask = (
-            (df_titles["Tit"] != "")
-            | (df_titles["WTit"] != "")
-            | (df_titles["OTit"] != "")
-        )
-        titled_ids = set(df_titles.loc[titled_mask, "IdNumber"])
-        print(f"Found {len(titled_ids)} players with a FIDE title.")
-
-        # --- 2. Get IDs of players referenced in players.sqlite ---
-        print("Step 2: Reading referenced player IDs...")
+        # --- Get referenced IDs from players.sqlite ---
+        print("Step 1: Reading referenced player IDs...")
         referenced_ids = get_referenced_ids(players_path, verbose=verbose)
         print(f"Found {len(referenced_ids)} referenced players.")
 
-        # --- 3. Combine IDs into a final set ---
+        # --- Single-pass: read chunks, collect titled IDs, and filter ---
+        print("Step 2: Processing FIDE data (single pass)...")
+
+        # Get schema for SQLite writer
+        # Use source schema if available, otherwise generate from format spec
+        schema = None
+        if hasattr(reader, "get_schema"):
+            schema = reader.get_schema()
+        if schema is None and output_path.suffix.lower() == ".sqlite":
+            log("Generating schema from column specifications...")
+            schema = generate_sqlite_schema()
+
+        titled_ids: set = set()
+        total_written = 0
+        pending_chunks: list = []
+
+        # First pass: collect all titled IDs while reading chunks
+        for chunk in reader.read_all_chunked(chunk_size):
+            # Find titled players in this chunk
+            titled_mask = (
+                (chunk["Tit"].fillna("") != "")
+                | (chunk["WTit"].fillna("") != "")
+                | (chunk["OTit"].fillna("") != "")
+            )
+            chunk_titled_ids = set(chunk.loc[titled_mask, "IdNumber"])
+            titled_ids.update(chunk_titled_ids)
+            pending_chunks.append(chunk)
+
+        print(f"Found {len(titled_ids)} players with a FIDE title.")
+
+        # Combine IDs to keep
         ids_to_keep = titled_ids.union(referenced_ids)
         print(f"Step 3: Total unique players to keep: {len(ids_to_keep)}")
 
         if not ids_to_keep:
             print("No players to keep. The output file will be empty.")
         else:
-            # --- 4. Read full data and filter it ---
-            print("Step 4: Filtering main FIDE data...")
-
-            # Get schema for SQLite writer (if applicable)
-            schema = None
-            if hasattr(reader, "get_schema"):
-                schema = reader.get_schema()
-
-            total_written = 0
-            for chunk in reader.read_all_chunked(chunk_size):
+            # Second pass: filter and write pending chunks
+            print("Step 4: Writing filtered data...")
+            for chunk in pending_chunks:
                 filtered_chunk = chunk[chunk["IdNumber"].isin(ids_to_keep)]
                 if not filtered_chunk.empty:
                     writer.write(filtered_chunk, schema=schema)
@@ -170,20 +203,14 @@ def thin_fide_database(args: argparse.Namespace) -> None:
 
             print(f"Filtered data contains {total_written} players.")
 
-        # --- 5. Finalize ---
+        # --- Finalize ---
         print(f"Step 5: Finalizing output file '{output_path}'...")
-        writer.close()
         print(f"Successfully created '{output_path}'.")
 
     except ValueError as e:
-        print(f"Configuration error: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise FideProcessingError(f"Configuration error: {e}")
     except (sqlite3.Error, pd.errors.DatabaseError) as e:
-        print(f"A database error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise FideProcessingError(f"Database error: {e}")
     finally:
         # --- Clean up resources ---
         if reader:
@@ -193,6 +220,18 @@ def thin_fide_database(args: argparse.Namespace) -> None:
         log("Resources cleaned up.")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Main entry point with error handling."""
     args = parse_args()
-    thin_fide_database(args)
+    try:
+        thin_fide_database(args)
+    except FideProcessingError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -26,6 +26,14 @@ class SqliteWriter:
         self._conn: Optional[sqlite3.Connection] = None
         self._schema_created = False
 
+    def __enter__(self) -> "SqliteWriter":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit - ensures connection is closed."""
+        self.close()
+
     def _log(self, message: str) -> None:
         """Print a message if verbose mode is enabled."""
         if self.verbose:

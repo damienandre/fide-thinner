@@ -4,7 +4,7 @@ SQLite reader for FIDE database.
 
 import pathlib
 import sqlite3
-from typing import Iterator, Optional, Union
+from typing import Iterator, List, Optional, Union
 
 import pandas as pd
 
@@ -36,22 +36,21 @@ class SqliteReader:
             self._conn = sqlite3.connect(self.file_path)
         return self._conn
 
-    def read_titles_data(self) -> pd.DataFrame:
+    def read_columns(self, columns: List[str]) -> pd.DataFrame:
         """
-        Read only the title-related columns for filtering.
+        Read only specified columns from the database.
+
+        Args:
+            columns: List of column names to read
 
         Returns:
-            DataFrame with columns: IdNumber, Tit, WTit, OTit
+            DataFrame with only the specified columns
         """
-        self._log("Reading title data from SQLite...")
+        self._log(f"Reading columns {columns} from SQLite...")
         conn = self._get_connection()
-        df = pd.read_sql_query(
-            "SELECT IdNumber, Tit, WTit, OTit FROM fide", conn
-        )
-        # Normalize by filling NaNs with empty strings
-        for col in ["Tit", "WTit", "OTit"]:
-            df[col] = df[col].fillna("")
-        self._log(f"Read {len(df)} rows of title data.")
+        columns_str = ", ".join(f'"{col}"' for col in columns)
+        df = pd.read_sql_query(f"SELECT {columns_str} FROM fide", conn)
+        self._log(f"Read {len(df)} rows.")
         return df
 
     def read_all_chunked(self, chunk_size: int = 100000) -> Iterator[pd.DataFrame]:

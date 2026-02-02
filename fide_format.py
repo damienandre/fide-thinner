@@ -63,3 +63,26 @@ INTEGER_COLUMNS = {"IdNumber", "SRtng", "SGm", "SK", "RRtng", "RGm", "Rk", "BRtn
 
 # String columns (all non-integer columns)
 STRING_COLUMNS = {col.name for col in FIDE_COLUMNS if col.name not in INTEGER_COLUMNS}
+
+
+def generate_sqlite_schema() -> str:
+    """
+    Generate a CREATE TABLE SQL statement based on column specifications.
+
+    This is used when converting from text format to SQLite, where no
+    source schema is available.
+
+    Returns:
+        CREATE TABLE SQL statement for the fide table
+    """
+    column_defs = []
+    for col in FIDE_COLUMNS:
+        if col.name == "IdNumber":
+            column_defs.append(f"{col.name} INT PRIMARY KEY")
+        elif col.name in INTEGER_COLUMNS:
+            column_defs.append(f"{col.name} INT")
+        else:
+            column_defs.append(f"{col.name} VARCHAR({col.width})")
+
+    columns_sql = ",\n    ".join(column_defs)
+    return f"CREATE TABLE fide (\n    {columns_sql}\n)"

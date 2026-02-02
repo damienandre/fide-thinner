@@ -3,11 +3,12 @@ Fixed-width text file writer for FIDE database.
 """
 
 import pathlib
+import sys
 from typing import Optional, TextIO, Union
 
 import pandas as pd
 
-from fide_format import COLUMN_NAMES, FIDE_COLUMNS, FIDE_ENCODING
+from fide_format import FIDE_COLUMNS, FIDE_ENCODING
 
 
 class TxtWriter:
@@ -26,11 +27,24 @@ class TxtWriter:
         self._file: Optional[TextIO] = None
         self._rows_written: int = 0
         self._header_written: bool = False
+        self._truncation_warnings: int = 0
+
+    def __enter__(self) -> "TxtWriter":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit - ensures file is closed."""
+        self.close()
 
     def _log(self, message: str) -> None:
         """Print a message if verbose mode is enabled."""
         if self.verbose:
             print(message)
+
+    def _warn(self, message: str) -> None:
+        """Print a warning message to stderr."""
+        print(f"Warning: {message}", file=sys.stderr)
 
     def _ensure_file(self) -> TextIO:
         """Ensure the output file is open."""
@@ -56,19 +70,24 @@ class TxtWriter:
         f.write("".join(header_parts).rstrip() + "\n")
         self._header_written = True
 
-    def _format_row(self, row: pd.Series) -> str:
+    def _format_row_tuple(self, row_tuple, column_indices: dict) -> str:
         """
-        Format a single row as a fixed-width string.
+        Format a single row tuple as a fixed-width string.
 
         Args:
-            row: Pandas Series containing the row data
+            row_tuple: Named tuple from itertuples
+            column_indices: Mapping of column name to tuple index
 
         Returns:
             Formatted fixed-width string
         """
         parts = []
         for col in FIDE_COLUMNS:
-            value = row.get(col.name, "")
+            idx = column_indices.get(col.name)
+            if idx is not None:
+                value = row_tuple[idx]
+            else:
+                value = ""
 
             # Handle None/NaN values
             if pd.isna(value):
@@ -79,6 +98,7 @@ class TxtWriter:
             # Pad or truncate to column width
             if len(value) > col.width:
                 value = value[:col.width]
+                self._truncation_warnings += 1
             else:
                 value = value.ljust(col.width)
 
@@ -103,8 +123,15 @@ class TxtWriter:
 
         self._log(f"Writing {len(df)} rows to text file...")
 
-        for _, row in df.iterrows():
-            line = self._format_row(row)
+        # Build column index mapping for itertuples
+        # itertuples returns (Index, col1, col2, ...) so offset by 1
+        column_indices = {col: i + 1 for i, col in enumerate(df.columns)}
+
+        # Use itertuples for better performance (3-10x faster than iterrows)
+        for row_tuple in df.itertuples(index=False, name=None):
+            # Adjust indices since we're using index=False
+            adjusted_indices = {col: i for i, col in enumerate(df.columns)}
+            line = self._format_row_tuple(row_tuple, adjusted_indices)
             f.write(line + "\n")
             self._rows_written += 1
 
@@ -114,5 +141,9 @@ class TxtWriter:
         """Close the file."""
         if self._file is not None:
             self._log(f"Closing text file. Total rows written: {self._rows_written}")
+            if self._truncation_warnings > 0:
+                self._warn(
+                    f"Truncated {self._truncation_warnings} values that exceeded column width"
+                )
             self._file.close()
             self._file = None

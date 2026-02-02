@@ -121,10 +121,10 @@ class TestGetReader:
 class TestSqliteReader:
     """Tests for SqliteReader."""
 
-    def test_read_titles_data(self, sample_sqlite_db):
-        """Test reading title data."""
+    def test_read_columns(self, sample_sqlite_db):
+        """Test reading specific columns."""
         reader = SqliteReader(sample_sqlite_db)
-        df = reader.read_titles_data()
+        df = reader.read_columns(["IdNumber", "Tit", "WTit", "OTit"])
         reader.close()
 
         assert len(df) == 4
@@ -133,7 +133,6 @@ class TestSqliteReader:
         # Check specific values
         gm_player = df[df["IdNumber"] == 1001].iloc[0]
         assert gm_player["Tit"] == "GM"
-        assert gm_player["WTit"] == ""
 
     def test_read_all(self, sample_sqlite_db):
         """Test reading all data."""
@@ -169,10 +168,10 @@ class TestSqliteReader:
 class TestTxtReader:
     """Tests for TxtReader."""
 
-    def test_read_titles_data(self, sample_txt_file):
-        """Test reading title data from text file."""
+    def test_read_columns(self, sample_txt_file):
+        """Test reading specific columns from text file."""
         reader = TxtReader(sample_txt_file)
-        df = reader.read_titles_data()
+        df = reader.read_columns(["IdNumber", "Tit", "WTit", "OTit"])
         reader.close()
 
         assert len(df) == 4

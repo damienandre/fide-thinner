@@ -25,6 +25,12 @@ DEFAULT_INPUT = pathlib.Path("data/fide.sqlite")
 FEDERATION_COL = "Fed"
 TITLE_COLS_PRIORITY = ["Tit", "WTit", "OTit"]
 INACTIVE_FLAG_COL = "Flag"
+REQUIRED_COLUMNS = [FEDERATION_COL, INACTIVE_FLAG_COL] + TITLE_COLS_PRIORITY
+
+
+class StatsError(Exception):
+    """Exception raised for errors during statistics processing."""
+    pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +56,9 @@ def run_analysis(args: argparse.Namespace) -> None:
     """
     Load player data and print statistics about active/inactive players
     by federation and title.
+
+    Raises:
+        StatsError: If analysis fails
     """
     input_path = args.input
     verbose = args.verbose
@@ -60,8 +69,7 @@ def run_analysis(args: argparse.Namespace) -> None:
 
     # --- Verify source file exists ---
     if not input_path.exists():
-        print(f"Error: Input file not found at '{input_path}'", file=sys.stderr)
-        sys.exit(1)
+        raise StatsError(f"Input file not found at '{input_path}'")
 
     reader = None
 
@@ -70,26 +78,14 @@ def run_analysis(args: argparse.Namespace) -> None:
         reader = get_reader(input_path, verbose=verbose)
         print(f"Reading data from '{input_path}'...")
 
-        # Read all data
-        df = reader.read_all()
+        # Read only required columns for efficiency
+        df = reader.read_columns(REQUIRED_COLUMNS)
         log(f"Loaded {len(df)} rows.")
 
-        # Check required columns exist
-        required_cols = [FEDERATION_COL, INACTIVE_FLAG_COL] + TITLE_COLS_PRIORITY
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            print(
-                f"Error: Missing required columns: {missing_cols}",
-                file=sys.stderr
-            )
-            sys.exit(1)
-
     except ValueError as e:
-        print(f"Configuration error: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise StatsError(f"Configuration error: {e}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise StatsError(f"Failed to read data: {e}")
     finally:
         if reader:
             reader.close()
@@ -97,13 +93,16 @@ def run_analysis(args: argparse.Namespace) -> None:
     # --- Data Processing ---
     print("Processing player data...")
 
-    # Consolidate Title: Pick the highest priority title available
-    df["main_title"] = (
-        df[TITLE_COLS_PRIORITY[0]]
-        .fillna(df[TITLE_COLS_PRIORITY[1]])
-        .fillna(df[TITLE_COLS_PRIORITY[2]])
-    )
-    df["main_title"] = df["main_title"].fillna("No Title").replace("", "No Title")
+    # Normalize title columns - ensure empty strings instead of NaN
+    for col in TITLE_COLS_PRIORITY:
+        df[col] = df[col].fillna("")
+
+    # Consolidate Title: Pick the highest priority non-empty title
+    # Use explicit iteration to handle empty strings (fillna only handles NaN)
+    df["main_title"] = "No Title"
+    for col in reversed(TITLE_COLS_PRIORITY):  # Process in reverse priority order
+        mask = df[col] != ""
+        df.loc[mask, "main_title"] = df.loc[mask, col]
 
     # Determine Active/Inactive status from 'Flag' column
     # 'i' or 'wi' in the Flag column means inactive.
@@ -140,6 +139,18 @@ def run_analysis(args: argparse.Namespace) -> None:
     print("\n\nAnalysis complete.")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Main entry point with error handling."""
     args = parse_args()
-    run_analysis(args)
+    try:
+        run_analysis(args)
+    except StatsError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

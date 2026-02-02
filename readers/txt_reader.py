@@ -4,11 +4,12 @@ Fixed-width text file reader for FIDE database.
 
 import pathlib
 import sys
-from typing import Iterator, List, Optional, Union
+from typing import Iterator, List, Optional, Set, Union
 
 import pandas as pd
 
 from fide_format import (
+    COLUMN_MAP,
     COLUMN_NAMES,
     FIDE_COLUMNS,
     FIDE_ENCODING,
@@ -42,13 +43,16 @@ class TxtReader:
         """Print a warning message to stderr."""
         print(f"Warning: {message}", file=sys.stderr)
 
-    def _parse_line(self, line: str, line_num: int) -> Optional[dict]:
+    def _parse_line(
+        self, line: str, line_num: int, columns: Optional[Set[str]] = None
+    ) -> Optional[dict]:
         """
         Parse a single line of the fixed-width format.
 
         Args:
             line: The line to parse
             line_num: Line number for error reporting
+            columns: Optional set of column names to parse. If None, parse all.
 
         Returns:
             Dictionary of column values, or None if the line is malformed
@@ -65,7 +69,15 @@ class TxtReader:
 
         try:
             row = {}
-            for col in FIDE_COLUMNS:
+            # Always parse IdNumber for validation
+            cols_to_parse = FIDE_COLUMNS if columns is None else [
+                COLUMN_MAP[name] for name in columns if name in COLUMN_MAP
+            ]
+            # Ensure IdNumber is always parsed
+            if columns is not None and "IdNumber" not in columns:
+                cols_to_parse = [COLUMN_MAP["IdNumber"]] + list(cols_to_parse)
+
+            for col in cols_to_parse:
                 value = line[col.start:col.end].strip()
 
                 if col.name in INTEGER_COLUMNS:
@@ -104,36 +116,37 @@ class TxtReader:
                 f"Total skipped lines: {self._skipped_lines} out of {self._total_lines}"
             )
 
-    def read_titles_data(self) -> pd.DataFrame:
+    def read_columns(self, columns: List[str]) -> pd.DataFrame:
         """
-        Read only the title-related columns for filtering.
+        Read only specified columns from the file.
+
+        Args:
+            columns: List of column names to read
 
         Returns:
-            DataFrame with columns: IdNumber, Tit, WTit, OTit
+            DataFrame with only the specified columns
         """
-        self._log(f"Reading title data from '{self.file_path}'...")
+        self._log(f"Reading columns {columns} from '{self.file_path}'...")
         self._skipped_lines = 0
         self._total_lines = 0
+
+        columns_set = set(columns)
+        # Ensure IdNumber is included for validation
+        columns_set.add("IdNumber")
+        output_columns = list(columns)
 
         rows: List[dict] = []
 
         for line_num, line in enumerate(self._read_lines(), start=1):
             self._total_lines = line_num
-            parsed = self._parse_line(line, line_num)
+            parsed = self._parse_line(line, line_num, columns_set)
             if parsed is not None:
-                rows.append({
-                    "IdNumber": parsed["IdNumber"],
-                    "Tit": parsed["Tit"],
-                    "WTit": parsed["WTit"],
-                    "OTit": parsed["OTit"],
-                })
+                # Only include requested columns in output
+                rows.append({col: parsed.get(col, "") for col in output_columns})
 
         self._finalize()
-        df = pd.DataFrame(rows, columns=["IdNumber", "Tit", "WTit", "OTit"])
-        # Ensure string columns have empty string instead of NaN
-        for col in ["Tit", "WTit", "OTit"]:
-            df[col] = df[col].fillna("")
-        self._log(f"Read {len(df)} rows of title data.")
+        df = pd.DataFrame(rows, columns=output_columns)
+        self._log(f"Read {len(df)} rows.")
         return df
 
     def read_all_chunked(self, chunk_size: int = 100000) -> Iterator[pd.DataFrame]:
