@@ -253,12 +253,9 @@ class TestFideThinner:
     def test_filter_both_disabled_error(self):
         """Test that --no-referenced --no-titled raises an error."""
         from fide_thinner import parse_args
-        import sys
 
-        # Capture the SystemExit from argparse.error()
         with pytest.raises(SystemExit) as exc_info:
-            sys.argv = ["fide_thinner.py", "--no-referenced", "--no-titled"]
-            parse_args()
+            parse_args(["--no-referenced", "--no-titled"])
 
         # argparse.error() exits with code 2
         assert exc_info.value.code == 2

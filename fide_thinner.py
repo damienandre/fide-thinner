@@ -1,16 +1,15 @@
 """
 This script creates a thinned version of the FIDE players database.
 
-It reads two source databases:
-1. A FIDE players file (SQLite or fixed-width text format)
-2. `players.sqlite`: A database containing a specific subset of players.
+It reads a FIDE players file (SQLite or fixed-width text format) and generates
+a new database (SQLite or text) with the same structure, containing only players
+matching the enabled filters.
 
-It generates a new database (SQLite or text), with the same structure
-as the input, containing only players who meet at least one of
-the following criteria:
-- The player has a FIDE title (i.e., 'Tit', 'WTit', or 'OTit' is not empty).
-- The player's ID is referenced in the `players.sqlite` database
-  (linking `fide.IdNumber` to `players.FideId`).
+Available filters (enabled by default, can be toggled via CLI flags):
+- Titled players: Players with a FIDE title (Tit, WTit, or OTit non-empty)
+- Referenced players: Players whose ID exists in `players.sqlite`
+
+At least one filter must be enabled.
 """
 
 import argparse
@@ -35,8 +34,12 @@ class FideProcessingError(Exception):
     pass
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments.
+
+    Args:
+        argv: Command line arguments to parse. If None, uses sys.argv.
+    """
     parser = argparse.ArgumentParser(
         description="Create a thinned version of the FIDE players database."
     )
@@ -82,7 +85,7 @@ def parse_args() -> argparse.Namespace:
         help="Include players with any FIDE title (default: enabled)"
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Validate that at least one filter is enabled
     if not args.referenced and not args.titled:
