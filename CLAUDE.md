@@ -8,15 +8,17 @@ fide-thinner is a Python utility for filtering and analyzing FIDE (International
 
 ## Running the Scripts
 
+This project uses `uv` for Python package management and script execution.
+
 ```bash
 # Create filtered database (keeps only titled players + referenced players)
-python fide_thinner.py                                    # Default: SQLite in/out
-python fide_thinner.py -i data/fide.txt -o data/thin.txt  # Text file support
-python fide_thinner.py -i data/fide.txt -o data/thin.sqlite  # Convert txt to sqlite
+uv run fide_thinner.py                                    # Default: SQLite in/out
+uv run fide_thinner.py -i data/fide.txt -o data/thin.txt  # Text file support
+uv run fide_thinner.py -i data/fide.txt -o data/thin.sqlite  # Convert txt to sqlite
 
 # Generate statistics by federation and title
-python fide_stats.py                      # Default: SQLite input
-python fide_stats.py -i data/fide.txt     # Text file input
+uv run fide_stats.py                      # Default: SQLite input
+uv run fide_stats.py -i data/fide.txt     # Text file input
 ```
 
 Both scripts require `pandas` and `pytest` for testing.
@@ -84,5 +86,5 @@ Uses chunked reading (100K rows) for memory efficiency.
 ## Testing
 
 ```bash
-python -m pytest tests/
+uv run pytest tests/
 ```
