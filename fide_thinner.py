@@ -1,16 +1,15 @@
 """
 This script creates a thinned version of the FIDE players database.
 
-It reads two source databases:
-1. A FIDE players file (SQLite or fixed-width text format)
-2. `players.sqlite`: A database containing a specific subset of players.
+It reads a FIDE players file (SQLite or fixed-width text format) and generates
+a new database (SQLite or text) with the same structure, containing only players
+matching the enabled filters.
 
-It generates a new database (SQLite or text), with the same structure
-as the input, containing only players who meet at least one of
-the following criteria:
-- The player has a FIDE title (i.e., 'Tit', 'WTit', or 'OTit' is not empty).
-- The player's ID is referenced in the `players.sqlite` database
-  (linking `fide.IdNumber` to `players.FideId`).
+Available filters (enabled by default, can be toggled via CLI flags):
+- Titled players: Players with a FIDE title (Tit, WTit, or OTit non-empty)
+- Referenced players: Players whose ID exists in `players.sqlite`
+
+At least one filter must be enabled.
 """
 
 import argparse
@@ -35,8 +34,12 @@ class FideProcessingError(Exception):
     pass
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments.
+
+    Args:
+        argv: Command line arguments to parse. If None, uses sys.argv.
+    """
     parser = argparse.ArgumentParser(
         description="Create a thinned version of the FIDE players database."
     )
@@ -69,8 +72,24 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--referenced",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include players referenced in players.sqlite (default: enabled)"
+    )
+    parser.add_argument(
+        "--titled",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include players with any FIDE title (default: enabled)"
+    )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    # Validate that at least one filter is enabled
+    if not args.referenced and not args.titled:
+        parser.error("At least one filter must be enabled (--referenced or --titled)")
 
     # Validate chunk-size
     if args.chunk_size <= 0:
@@ -130,15 +149,25 @@ def thin_fide_database(args: argparse.Namespace) -> None:
     output_path = args.output if args.output else get_default_output(input_path)
     chunk_size = args.chunk_size
     verbose = args.verbose
+    filter_referenced = args.referenced
+    filter_titled = args.titled
 
     def log(msg: str) -> None:
         if verbose:
             print(msg)
 
+    # Log active filters
+    active_filters = []
+    if filter_titled:
+        active_filters.append("titled players")
+    if filter_referenced:
+        active_filters.append("referenced players")
+    print(f"Active filters: {', '.join(active_filters)}")
+
     # --- Verify source files exist ---
     if not input_path.exists():
         raise FideProcessingError(f"Source file '{input_path}' not found.")
-    if not players_path.exists():
+    if filter_referenced and not players_path.exists():
         raise FideProcessingError(f"Players database '{players_path}' not found.")
 
     reader = None
@@ -150,9 +179,13 @@ def thin_fide_database(args: argparse.Namespace) -> None:
         writer = get_writer(output_path, verbose=verbose)
 
         # --- Get referenced IDs from players.sqlite ---
-        print("Step 1: Reading referenced player IDs...")
-        referenced_ids = get_referenced_ids(players_path, verbose=verbose)
-        print(f"Found {len(referenced_ids)} referenced players.")
+        if filter_referenced:
+            print("Step 1: Reading referenced player IDs...")
+            referenced_ids = get_referenced_ids(players_path, verbose=verbose)
+            print(f"Found {len(referenced_ids)} referenced players.")
+        else:
+            print("Step 1: Skipping referenced player filter (disabled)")
+            referenced_ids = set()
 
         # --- Single-pass: read chunks, collect titled IDs, and filter ---
         print("Step 2: Processing FIDE data (single pass)...")
@@ -172,17 +205,21 @@ def thin_fide_database(args: argparse.Namespace) -> None:
 
         # First pass: collect all titled IDs while reading chunks
         for chunk in reader.read_all_chunked(chunk_size):
-            # Find titled players in this chunk
-            titled_mask = (
-                (chunk["Tit"].fillna("") != "")
-                | (chunk["WTit"].fillna("") != "")
-                | (chunk["OTit"].fillna("") != "")
-            )
-            chunk_titled_ids = set(chunk.loc[titled_mask, "IdNumber"])
-            titled_ids.update(chunk_titled_ids)
+            if filter_titled:
+                # Find titled players in this chunk
+                titled_mask = (
+                    (chunk["Tit"].fillna("") != "")
+                    | (chunk["WTit"].fillna("") != "")
+                    | (chunk["OTit"].fillna("") != "")
+                )
+                chunk_titled_ids = set(chunk.loc[titled_mask, "IdNumber"])
+                titled_ids.update(chunk_titled_ids)
             pending_chunks.append(chunk)
 
-        print(f"Found {len(titled_ids)} players with a FIDE title.")
+        if filter_titled:
+            print(f"Found {len(titled_ids)} players with a FIDE title.")
+        else:
+            print("Skipping titled player filter (disabled)")
 
         # Combine IDs to keep
         ids_to_keep = titled_ids.union(referenced_ids)

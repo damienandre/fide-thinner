@@ -124,7 +124,9 @@ class TestFideThinner:
             players=test_data_dir / "players.sqlite",
             output=test_data_dir / "fide_thin.sqlite",
             chunk_size=100000,
-            verbose=False
+            verbose=False,
+            referenced=True,
+            titled=True
         )
         thin_fide_database(args)
 
@@ -150,7 +152,9 @@ class TestFideThinner:
             players=test_txt_file / "players.sqlite",
             output=test_txt_file / "fide_thin.txt",
             chunk_size=100000,
-            verbose=False
+            verbose=False,
+            referenced=True,
+            titled=True
         )
         thin_fide_database(args)
 
@@ -174,7 +178,9 @@ class TestFideThinner:
             players=test_data_dir / "players.sqlite",
             output=test_data_dir / "fide_thin.txt",
             chunk_size=100000,
-            verbose=False
+            verbose=False,
+            referenced=True,
+            titled=True
         )
         thin_fide_database(args)
 
@@ -187,6 +193,100 @@ class TestFideThinner:
 
         # Header + 3 data lines
         assert len(lines) == 4
+
+    def test_filter_titled_only(self, test_data_dir):
+        """Test filtering with --no-referenced flag (only titled players)."""
+        from fide_thinner import thin_fide_database
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_data_dir / "fide.sqlite",
+            players=test_data_dir / "players.sqlite",
+            output=test_data_dir / "fide_titled_only.sqlite",
+            chunk_size=100000,
+            verbose=False,
+            referenced=False,
+            titled=True
+        )
+        thin_fide_database(args)
+
+        # Verify output
+        output_db = test_data_dir / "fide_titled_only.sqlite"
+        assert output_db.exists()
+
+        conn = sqlite3.connect(output_db)
+        df = pd.read_sql_query("SELECT * FROM fide", conn)
+        conn.close()
+
+        # Should have only 2 titled players (1001: GM, 1002: WGM)
+        assert len(df) == 2
+        assert set(df["IdNumber"]) == {1001, 1002}
+
+    def test_filter_referenced_only(self, test_data_dir):
+        """Test filtering with --no-titled flag (only referenced players)."""
+        from fide_thinner import thin_fide_database
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_data_dir / "fide.sqlite",
+            players=test_data_dir / "players.sqlite",
+            output=test_data_dir / "fide_referenced_only.sqlite",
+            chunk_size=100000,
+            verbose=False,
+            referenced=True,
+            titled=False
+        )
+        thin_fide_database(args)
+
+        # Verify output
+        output_db = test_data_dir / "fide_referenced_only.sqlite"
+        assert output_db.exists()
+
+        conn = sqlite3.connect(output_db)
+        df = pd.read_sql_query("SELECT * FROM fide", conn)
+        conn.close()
+
+        # Should have only 1 referenced player (1003)
+        assert len(df) == 1
+        assert set(df["IdNumber"]) == {1003}
+
+    def test_filter_both_disabled_error(self):
+        """Test that --no-referenced --no-titled raises an error."""
+        from fide_thinner import parse_args
+
+        with pytest.raises(SystemExit) as exc_info:
+            parse_args(["--no-referenced", "--no-titled"])
+
+        # argparse.error() exits with code 2
+        assert exc_info.value.code == 2
+
+    def test_default_behavior_unchanged(self, test_data_dir):
+        """Test that default behavior (both filters enabled) remains the same."""
+        from fide_thinner import thin_fide_database
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_data_dir / "fide.sqlite",
+            players=test_data_dir / "players.sqlite",
+            output=test_data_dir / "fide_default.sqlite",
+            chunk_size=100000,
+            verbose=False,
+            referenced=True,
+            titled=True
+        )
+        thin_fide_database(args)
+
+        # Verify output
+        output_db = test_data_dir / "fide_default.sqlite"
+        assert output_db.exists()
+
+        conn = sqlite3.connect(output_db)
+        df = pd.read_sql_query("SELECT * FROM fide", conn)
+        conn.close()
+
+        # Should have 3 players: 2 titled + 1 referenced (same as original behavior)
+        assert len(df) == 3
+        assert set(df["IdNumber"]) == {1001, 1002, 1003}
 
 
 class TestFideStats:
