@@ -9,7 +9,7 @@ from typing import IO, Optional, Union
 
 import pandas as pd
 
-from fide_format import COLUMN_NAMES, REVERSE_XML_TAG_MAP
+from fide_format import COLUMN_NAMES, INTEGER_COLUMNS, REVERSE_XML_TAG_MAP
 
 
 class XmlWriter:
@@ -93,7 +93,7 @@ class XmlWriter:
                 else:
                     value_str = str(value)
                     # Clean up integer formatting (remove .0)
-                    if value_str.endswith(".0"):
+                    if col_name in INTEGER_COLUMNS and value_str.endswith(".0"):
                         value_str = value_str[:-2]
 
                 child = ET.SubElement(player_elem, xml_tag)

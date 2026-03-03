@@ -87,10 +87,17 @@ class XmlReader:
 
     def _iter_players(self) -> Iterator[ET.Element]:
         """Iterate over <player> elements using streaming parsing."""
-        for event, elem in ET.iterparse(self.file_path, events=("end",)):
+        root = None
+        for event, elem in ET.iterparse(self.file_path, events=("start", "end")):
+            if event == "start":
+                if root is None:
+                    root = elem
+                continue
             if elem.tag == "player":
                 yield elem
                 elem.clear()
+                if root is not None:
+                    del root[:]
 
     def _finalize(self) -> None:
         """Report skipped elements if any."""
