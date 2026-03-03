@@ -23,31 +23,32 @@ class ColumnSpec:
 
 
 # FIDE fixed-width format column specifications
-# Based on FIDE standard players_list_foa.txt format
+# Based on FIDE standard players_list_foa.txt format (January 2025)
 FIDE_COLUMNS: List[ColumnSpec] = [
     ColumnSpec("IdNumber", 0, 15),
-    ColumnSpec("Name", 15, 60),
-    ColumnSpec("Fed", 75, 4),
-    ColumnSpec("Sex", 79, 2),
-    ColumnSpec("Tit", 81, 5),
-    ColumnSpec("WTit", 86, 5),
-    ColumnSpec("OTit", 91, 15),
-    ColumnSpec("FOA", 106, 4),
-    ColumnSpec("SRtng", 110, 6),
-    ColumnSpec("SGm", 116, 4),
-    ColumnSpec("SK", 120, 3),
-    ColumnSpec("RRtng", 123, 6),
-    ColumnSpec("RGm", 129, 4),
-    ColumnSpec("Rk", 133, 3),
-    ColumnSpec("BRtng", 136, 6),
-    ColumnSpec("BGm", 142, 4),
-    ColumnSpec("BK", 146, 3),
-    ColumnSpec("BDay", 149, 6),
-    ColumnSpec("Flag", 155, 6),
+    ColumnSpec("Name", 15, 61),
+    ColumnSpec("Fed", 76, 4),
+    ColumnSpec("Sex", 80, 4),
+    ColumnSpec("Tit", 84, 5),
+    ColumnSpec("WTit", 89, 5),
+    ColumnSpec("OTit", 94, 15),
+    ColumnSpec("FOA", 109, 4),
+    ColumnSpec("SRtng", 113, 6),
+    ColumnSpec("SGm", 119, 4),
+    ColumnSpec("SK", 123, 3),
+    ColumnSpec("RRtng", 126, 6),
+    ColumnSpec("RGm", 132, 4),
+    ColumnSpec("Rk", 136, 3),
+    ColumnSpec("BRtng", 139, 6),
+    ColumnSpec("BGm", 145, 4),
+    ColumnSpec("BK", 149, 3),
+    ColumnSpec("BDay", 152, 6),
+    ColumnSpec("Flag", 158, 4),
 ]
 
-# Expected minimum line length (last column end position)
-MIN_LINE_LENGTH = FIDE_COLUMNS[-1].end
+# Expected minimum line length (end of BK column - BDay and Flag may be truncated/missing)
+# BK ends at position 152, so lines must be at least 152 chars to include all rating data
+MIN_LINE_LENGTH = 152
 
 # Text file encoding used by FIDE
 FIDE_ENCODING = "latin-1"
@@ -63,6 +64,32 @@ INTEGER_COLUMNS = {"IdNumber", "SRtng", "SGm", "SK", "RRtng", "RGm", "Rk", "BRtn
 
 # String columns (all non-integer columns)
 STRING_COLUMNS = {col.name for col in FIDE_COLUMNS if col.name not in INTEGER_COLUMNS}
+
+# XML element name to internal column name mapping
+XML_TAG_MAP: dict[str, str] = {
+    "fideid": "IdNumber",
+    "name": "Name",
+    "country": "Fed",
+    "sex": "Sex",
+    "title": "Tit",
+    "w_title": "WTit",
+    "o_title": "OTit",
+    "foa_title": "FOA",
+    "rating": "SRtng",
+    "games": "SGm",
+    "k": "SK",
+    "rapid_rating": "RRtng",
+    "rapid_games": "RGm",
+    "rapid_k": "Rk",
+    "blitz_rating": "BRtng",
+    "blitz_games": "BGm",
+    "blitz_k": "BK",
+    "birthday": "BDay",
+    "flag": "Flag",
+}
+
+# Internal column name to XML element name mapping (reverse of XML_TAG_MAP)
+REVERSE_XML_TAG_MAP: dict[str, str] = {v: k for k, v in XML_TAG_MAP.items()}
 
 
 def generate_sqlite_schema() -> str:

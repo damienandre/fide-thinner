@@ -10,6 +10,7 @@ from fide_format import COLUMN_NAMES, FIDE_ENCODING
 from writers import get_writer
 from writers.sqlite_writer import SqliteWriter
 from writers.txt_writer import TxtWriter
+from writers.xml_writer import XmlWriter
 
 
 @pytest.fixture
@@ -77,6 +78,12 @@ class TestGetWriter:
         """Test that get_writer returns TxtWriter for .txt files."""
         writer = get_writer(tmp_path / "output.txt")
         assert isinstance(writer, TxtWriter)
+        writer.close()
+
+    def test_get_writer_xml(self, tmp_path):
+        """Test that get_writer returns XmlWriter for .xml files."""
+        writer = get_writer(tmp_path / "output.xml")
+        assert isinstance(writer, XmlWriter)
         writer.close()
 
     def test_get_writer_unsupported_extension(self, tmp_path):
@@ -221,3 +228,66 @@ class TestTxtWriter:
 
         # File may or may not exist, but should not error
         # If it exists, it should be empty or just header
+
+
+class TestXmlWriter:
+    """Tests for XmlWriter."""
+
+    def test_write_basic(self, tmp_path, sample_dataframe):
+        """Test basic writing to XML file."""
+        output_path = tmp_path / "output.xml"
+        writer = XmlWriter(output_path)
+        writer.write(sample_dataframe)
+        writer.close()
+
+        assert output_path.exists()
+        content = output_path.read_text(encoding="utf-8")
+        assert "<playerslist>" in content
+        assert "</playerslist>" in content
+        assert "<player>" in content
+        assert content.count("<player>") == 2
+
+    def test_write_data_format(self, tmp_path, sample_dataframe):
+        """Test that data is properly formatted as XML elements."""
+        output_path = tmp_path / "output.xml"
+        writer = XmlWriter(output_path)
+        writer.write(sample_dataframe)
+        writer.close()
+
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(output_path)
+        root = tree.getroot()
+
+        players = root.findall("player")
+        assert len(players) == 2
+
+        first_player = players[0]
+        assert first_player.find("fideid").text == "1001"
+        assert first_player.find("name").text == "Player One"
+        assert first_player.find("country").text == "USA"
+        assert first_player.find("title").text == "GM"
+
+    def test_write_multiple_chunks(self, tmp_path, sample_dataframe):
+        """Test writing multiple DataFrames (chunks)."""
+        output_path = tmp_path / "output.xml"
+        writer = XmlWriter(output_path)
+
+        writer.write(sample_dataframe.iloc[:1])
+        writer.write(sample_dataframe.iloc[1:])
+        writer.close()
+
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(output_path)
+        root = tree.getroot()
+
+        players = root.findall("player")
+        assert len(players) == 2
+
+    def test_write_empty_dataframe(self, tmp_path):
+        """Test writing empty DataFrame."""
+        output_path = tmp_path / "output.xml"
+        writer = XmlWriter(output_path)
+        writer.write(pd.DataFrame())
+        writer.close()
+
+        # File may or may not exist, but should not error

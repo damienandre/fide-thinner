@@ -10,6 +10,7 @@ from typing import Union
 from .base import FideReader
 from .sqlite_reader import SqliteReader
 from .txt_reader import TxtReader
+from .xml_reader import XmlReader
 
 
 def get_reader(file_path: Union[str, pathlib.Path], verbose: bool = False) -> FideReader:
@@ -17,7 +18,7 @@ def get_reader(file_path: Union[str, pathlib.Path], verbose: bool = False) -> Fi
     Get the appropriate reader for the given file path.
 
     Args:
-        file_path: Path to the FIDE database file (.sqlite or .txt)
+        file_path: Path to the FIDE database file (.xml, .sqlite, or .txt)
         verbose: Enable verbose logging
 
     Returns:
@@ -33,11 +34,13 @@ def get_reader(file_path: Union[str, pathlib.Path], verbose: bool = False) -> Fi
         return SqliteReader(path, verbose=verbose)
     elif suffix == ".txt":
         return TxtReader(path, verbose=verbose)
+    elif suffix == ".xml":
+        return XmlReader(path, verbose=verbose)
     else:
         raise ValueError(
             f"Unsupported file extension '{suffix}'. "
-            "Supported extensions: .sqlite, .txt"
+            "Supported extensions: .xml, .sqlite, .txt"
         )
 
 
-__all__ = ["get_reader", "FideReader", "SqliteReader", "TxtReader"]
+__all__ = ["get_reader", "FideReader", "SqliteReader", "TxtReader", "XmlReader"]
