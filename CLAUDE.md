@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-fide-thinner is a Python utility for filtering and analyzing FIDE (International Chess Federation) player databases. It supports both SQLite databases (~195 MB, ~1.8 million players) and fixed-width text files (`players_list_foa.txt`).
+fide-thinner is a Python utility for filtering and analyzing FIDE (International Chess Federation) player databases. It supports XML files (`players_list_xml_foa.xml`, default), SQLite databases (~195 MB, ~1.8 million players), and fixed-width text files (`players_list_foa.txt`).
 
 ## Running the Scripts
 
@@ -12,13 +12,15 @@ This project uses `uv` for Python package management and script execution.
 
 ```bash
 # Create filtered database (keeps only titled players + referenced players)
-uv run fide_thinner.py                                    # Default: SQLite in/out
-uv run fide_thinner.py -i data/fide.txt -o data/thin.txt  # Text file support
-uv run fide_thinner.py -i data/fide.txt -o data/thin.sqlite  # Convert txt to sqlite
+uv run fide_thinner.py                                        # Default: XML in/out
+uv run fide_thinner.py -i data/fide.sqlite -o data/thin.sqlite  # SQLite support
+uv run fide_thinner.py -i data/fide.txt -o data/thin.txt      # Text file support
+uv run fide_thinner.py -i data/fide.xml -o data/thin.sqlite   # Convert XML to SQLite
 
 # Generate statistics by federation and title
-uv run fide_stats.py                      # Default: SQLite input
-uv run fide_stats.py -i data/fide.txt     # Text file input
+uv run fide_stats.py                        # Default: XML input
+uv run fide_stats.py -i data/fide.sqlite    # SQLite input
+uv run fide_stats.py -i data/fide.txt       # Text file input
 ```
 
 Both scripts require `pandas` and `pytest` for testing.
@@ -27,16 +29,16 @@ Both scripts require `pandas` and `pytest` for testing.
 
 ### fide_thinner.py
 ```
--i, --input      Input FIDE file (.sqlite or .txt). Default: data/fide.sqlite
+-i, --input      Input FIDE file (.xml, .sqlite, or .txt). Default: data/fide.xml
 -p, --players    Players reference database (SQLite only). Default: data/players.sqlite
--o, --output     Output file (.sqlite or .txt). Default: data/fide_thin.<input_ext>
+-o, --output     Output file (.xml, .sqlite, or .txt). Default: data/fide_thin.<input_ext>
 --chunk-size     Chunk size for large files. Default: 100000
 -v, --verbose    Enable verbose logging
 ```
 
 ### fide_stats.py
 ```
--i, --input      Input FIDE file (.sqlite or .txt). Default: data/fide.sqlite
+-i, --input      Input FIDE file (.xml, .sqlite, or .txt). Default: data/fide.xml
 -v, --verbose    Enable verbose logging
 ```
 
@@ -55,13 +57,15 @@ The `fide` table in `data/fide.sqlite`:
 fide-thinner/
 ├── readers/           # Reader abstractions for different formats
 │   ├── base.py        # FideReader Protocol
+│   ├── xml_reader.py
 │   ├── sqlite_reader.py
 │   └── txt_reader.py
 ├── writers/           # Writer abstractions for different formats
 │   ├── base.py        # FideWriter Protocol
+│   ├── xml_writer.py
 │   ├── sqlite_writer.py
 │   └── txt_writer.py
-├── fide_format.py     # Column specifications for fixed-width format
+├── fide_format.py     # Column specifications and format mappings
 ├── fide_thinner.py    # Main filtering script
 ├── fide_stats.py      # Statistics generation script
 └── tests/             # Test suite
@@ -79,9 +83,9 @@ Uses chunked reading (100K rows) for memory efficiency.
 
 ## Data Files
 
-- `data/fide.sqlite` or `data/fide.txt` - Source FIDE database (required)
+- `data/fide.xml`, `data/fide.sqlite`, or `data/fide.txt` - Source FIDE database (required)
 - `data/players.sqlite` - Reference player IDs (required by fide_thinner.py)
-- `data/fide_thin.sqlite` or `data/fide_thin.txt` - Generated filtered output
+- `data/fide_thin.xml`, `data/fide_thin.sqlite`, or `data/fide_thin.txt` - Generated filtered output
 
 ## Testing
 

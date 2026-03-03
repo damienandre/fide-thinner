@@ -65,6 +65,32 @@ INTEGER_COLUMNS = {"IdNumber", "SRtng", "SGm", "SK", "RRtng", "RGm", "Rk", "BRtn
 # String columns (all non-integer columns)
 STRING_COLUMNS = {col.name for col in FIDE_COLUMNS if col.name not in INTEGER_COLUMNS}
 
+# XML element name to internal column name mapping
+XML_TAG_MAP: dict[str, str] = {
+    "fideid": "IdNumber",
+    "name": "Name",
+    "country": "Fed",
+    "sex": "Sex",
+    "title": "Tit",
+    "w_title": "WTit",
+    "o_title": "OTit",
+    "foa_title": "FOA",
+    "rating": "SRtng",
+    "games": "SGm",
+    "k": "SK",
+    "rapid_rating": "RRtng",
+    "rapid_games": "RGm",
+    "rapid_k": "Rk",
+    "blitz_rating": "BRtng",
+    "blitz_games": "BGm",
+    "blitz_k": "BK",
+    "birthday": "BDay",
+    "flag": "Flag",
+}
+
+# Internal column name to XML element name mapping (reverse of XML_TAG_MAP)
+REVERSE_XML_TAG_MAP: dict[str, str] = {v: k for k, v in XML_TAG_MAP.items()}
+
 
 def generate_sqlite_schema() -> str:
     """

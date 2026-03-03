@@ -5,7 +5,7 @@ import sqlite3
 import pandas as pd
 import pytest
 
-from fide_format import FIDE_COLUMNS, FIDE_ENCODING
+from fide_format import COLUMN_NAMES, FIDE_COLUMNS, FIDE_ENCODING, REVERSE_XML_TAG_MAP
 
 
 def _format_fide_line(data: dict) -> str:
@@ -101,6 +101,52 @@ def test_txt_file(tmp_path):
             f.write(_format_fide_line(row) + "\n")
 
     # Create players.sqlite
+    players_db = data_dir / "players.sqlite"
+    conn = sqlite3.connect(players_db)
+    conn.execute("CREATE TABLE players (FideId INT)")
+    conn.execute("INSERT INTO players VALUES (1003)")
+    conn.commit()
+    conn.close()
+
+    return data_dir
+
+
+def _build_player_xml(data: dict) -> str:
+    """Build a <player> XML element string from a data dictionary."""
+    parts = ["<player>"]
+    for col_name in COLUMN_NAMES:
+        xml_tag = REVERSE_XML_TAG_MAP.get(col_name)
+        if xml_tag is None:
+            continue
+        value = str(data.get(col_name, ""))
+        parts.append(f"<{xml_tag}>{value}</{xml_tag}>")
+    parts.append("</player>")
+    return "".join(parts)
+
+
+@pytest.fixture
+def test_xml_file(tmp_path):
+    """Create a test XML file with sample data and players.sqlite."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    xml_path = data_dir / "fide.xml"
+
+    test_rows = [
+        {"IdNumber": 1001, "Name": "GM Player", "Fed": "USA", "Sex": "M", "Tit": "GM", "WTit": "", "OTit": "", "FOA": "", "SRtng": 2700, "SGm": 100, "SK": 40, "RRtng": 2650, "RGm": 50, "Rk": 35, "BRtng": 2600, "BGm": 30, "BK": 30, "BDay": "1990", "Flag": ""},
+        {"IdNumber": 1002, "Name": "WGM Player", "Fed": "RUS", "Sex": "F", "Tit": "", "WTit": "WGM", "OTit": "", "FOA": "", "SRtng": 2400, "SGm": 80, "SK": 20, "RRtng": 2350, "RGm": 40, "Rk": 18, "BRtng": 2300, "BGm": 20, "BK": 15, "BDay": "1985", "Flag": ""},
+        {"IdNumber": 1003, "Name": "Referenced Player", "Fed": "GER", "Sex": "M", "Tit": "", "WTit": "", "OTit": "", "FOA": "", "SRtng": 2200, "SGm": 50, "SK": 15, "RRtng": 2150, "RGm": 25, "Rk": 12, "BRtng": 2100, "BGm": 15, "BK": 10, "BDay": "2000", "Flag": ""},
+        {"IdNumber": 1004, "Name": "Unreferenced Player", "Fed": "FRA", "Sex": "M", "Tit": "", "WTit": "", "OTit": "", "FOA": "", "SRtng": 1800, "SGm": 20, "SK": 10, "RRtng": 1750, "RGm": 10, "Rk": 8, "BRtng": 1700, "BGm": 5, "BK": 5, "BDay": "2005", "Flag": "i"},
+    ]
+
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        f.write("<playerslist>\n")
+        for row in test_rows:
+            f.write(_build_player_xml(row) + "\n")
+        f.write("</playerslist>\n")
+
+    # Create players.sqlite (references player 1003)
     players_db = data_dir / "players.sqlite"
     conn = sqlite3.connect(players_db)
     conn.execute("CREATE TABLE players (FideId INT)")
@@ -289,6 +335,90 @@ class TestFideThinner:
         assert set(df["IdNumber"]) == {1001, 1002, 1003}
 
 
+    def test_xml_to_xml(self, test_xml_file):
+        """Test XML input to XML output."""
+        from fide_thinner import thin_fide_database
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_xml_file / "fide.xml",
+            players=test_xml_file / "players.sqlite",
+            output=test_xml_file / "fide_thin.xml",
+            chunk_size=100000,
+            verbose=False,
+            referenced=True,
+            titled=True
+        )
+        thin_fide_database(args)
+
+        output_xml = test_xml_file / "fide_thin.xml"
+        assert output_xml.exists()
+
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(output_xml)
+        root = tree.getroot()
+        players = root.findall("player")
+
+        # Should have 3 players: 2 titled + 1 referenced
+        assert len(players) == 3
+        fide_ids = {int(p.find("fideid").text) for p in players}
+        assert fide_ids == {1001, 1002, 1003}
+
+    def test_xml_to_sqlite(self, test_xml_file):
+        """Test XML input to SQLite output."""
+        from fide_thinner import thin_fide_database
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_xml_file / "fide.xml",
+            players=test_xml_file / "players.sqlite",
+            output=test_xml_file / "fide_thin.sqlite",
+            chunk_size=100000,
+            verbose=False,
+            referenced=True,
+            titled=True
+        )
+        thin_fide_database(args)
+
+        output_db = test_xml_file / "fide_thin.sqlite"
+        assert output_db.exists()
+
+        conn = sqlite3.connect(output_db)
+        df = pd.read_sql_query("SELECT * FROM fide", conn)
+        conn.close()
+
+        assert len(df) == 3
+        assert set(df["IdNumber"]) == {1001, 1002, 1003}
+
+    def test_sqlite_to_xml(self, test_data_dir):
+        """Test SQLite input to XML output."""
+        from fide_thinner import thin_fide_database
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_data_dir / "fide.sqlite",
+            players=test_data_dir / "players.sqlite",
+            output=test_data_dir / "fide_thin.xml",
+            chunk_size=100000,
+            verbose=False,
+            referenced=True,
+            titled=True
+        )
+        thin_fide_database(args)
+
+        output_xml = test_data_dir / "fide_thin.xml"
+        assert output_xml.exists()
+
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(output_xml)
+        root = tree.getroot()
+        players = root.findall("player")
+
+        assert len(players) == 3
+        fide_ids = {int(p.find("fideid").text) for p in players}
+        assert fide_ids == {1001, 1002, 1003}
+
+
 class TestFideStats:
     """Integration tests for fide_stats.py."""
 
@@ -323,3 +453,20 @@ class TestFideStats:
         captured = capsys.readouterr()
         assert "Player Status by Federation" in captured.out
         assert "Player Status by Title" in captured.out
+
+    def test_stats_xml(self, test_xml_file, capsys):
+        """Test statistics from XML file."""
+        from fide_stats import run_analysis
+        import argparse
+
+        args = argparse.Namespace(
+            input=test_xml_file / "fide.xml",
+            verbose=False
+        )
+        run_analysis(args)
+
+        captured = capsys.readouterr()
+        assert "Player Status by Federation" in captured.out
+        assert "Player Status by Title" in captured.out
+        assert "USA" in captured.out
+        assert "GM" in captured.out

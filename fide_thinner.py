@@ -24,9 +24,9 @@ from readers import get_reader
 from writers import get_writer
 
 # --- Default file paths ---
-DEFAULT_FIDE_INPUT = pathlib.Path("data/fide.sqlite")
+DEFAULT_FIDE_INPUT = pathlib.Path("data/fide.xml")
 DEFAULT_PLAYERS_DB = pathlib.Path("data/players.sqlite")
-DEFAULT_OUTPUT = pathlib.Path("data/fide_thin.sqlite")
+DEFAULT_OUTPUT = pathlib.Path("data/fide_thin.xml")
 
 
 class FideProcessingError(Exception):
@@ -47,7 +47,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-i", "--input",
         type=pathlib.Path,
         default=DEFAULT_FIDE_INPUT,
-        help=f"Input FIDE file (.sqlite or .txt). Default: {DEFAULT_FIDE_INPUT}"
+        help=f"Input FIDE file (.xml, .sqlite, or .txt). Default: {DEFAULT_FIDE_INPUT}"
     )
     parser.add_argument(
         "-p", "--players",
@@ -59,7 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-o", "--output",
         type=pathlib.Path,
         default=None,
-        help="Output file (.sqlite or .txt). Default: data/fide_thin.<input_ext>"
+        help="Output file (.xml, .sqlite, or .txt). Default: data/fide_thin.<input_ext>"
     )
     parser.add_argument(
         "--chunk-size",

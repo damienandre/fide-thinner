@@ -21,7 +21,7 @@ import pandas as pd
 from readers import get_reader
 
 # --- Default configuration ---
-DEFAULT_INPUT = pathlib.Path("data/fide.sqlite")
+DEFAULT_INPUT = pathlib.Path("data/fide.xml")
 FEDERATION_COL = "Fed"
 TITLE_COLS_PRIORITY = ["Tit", "WTit", "OTit"]
 INACTIVE_FLAG_COL = "Flag"
@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         "-i", "--input",
         type=pathlib.Path,
         default=DEFAULT_INPUT,
-        help=f"Input FIDE file (.sqlite or .txt). Default: {DEFAULT_INPUT}"
+        help=f"Input FIDE file (.xml, .sqlite, or .txt). Default: {DEFAULT_INPUT}"
     )
     parser.add_argument(
         "-v", "--verbose",
