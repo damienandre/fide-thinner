@@ -8,6 +8,10 @@ from typing import Iterator, List, Optional, Union
 
 import pandas as pd
 
+from fide_format import COLUMN_NAMES
+
+_ALLOWED_COLUMNS = frozenset(COLUMN_NAMES)
+
 
 class SqliteReader:
     """Reader for FIDE SQLite database files."""
@@ -47,6 +51,9 @@ class SqliteReader:
             DataFrame with only the specified columns
         """
         self._log(f"Reading columns {columns} from SQLite...")
+        invalid = [col for col in columns if col not in _ALLOWED_COLUMNS]
+        if invalid:
+            raise ValueError(f"Unknown FIDE columns: {invalid}")
         conn = self._get_connection()
         columns_str = ", ".join(f'"{col}"' for col in columns)
         df = pd.read_sql_query(f"SELECT {columns_str} FROM fide", conn)
