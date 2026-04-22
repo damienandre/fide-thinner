@@ -61,9 +61,8 @@ class TestFideColumns:
         assert COLUMN_NAMES == expected
 
     def test_min_line_length(self):
-        """Test MIN_LINE_LENGTH is correct."""
-        last_col = FIDE_COLUMNS[-1]
-        assert MIN_LINE_LENGTH == last_col.end
+        """MIN_LINE_LENGTH matches the end of BK (BDay/Flag may be truncated in real data)."""
+        assert MIN_LINE_LENGTH == COLUMN_MAP["BK"].end
 
     def test_integer_columns_are_valid(self):
         """Test that all integer columns exist in FIDE_COLUMNS."""

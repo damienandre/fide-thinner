@@ -65,7 +65,8 @@ def sample_sqlite_db(tmp_path):
 
 def _format_fide_line(data: dict) -> str:
     """Format a row as a fixed-width FIDE line using column specs."""
-    line = [" "] * 161  # MIN_LINE_LENGTH
+    line_length = FIDE_COLUMNS[-1].end
+    line = [" "] * line_length
     for col in FIDE_COLUMNS:
         value = str(data.get(col.name, ""))
         # Left-align the value within the column width
